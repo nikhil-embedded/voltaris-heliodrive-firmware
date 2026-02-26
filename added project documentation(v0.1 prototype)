@@ -1,0 +1,16 @@
+# Voltaris HelioDrive Firmware
+
+Version: v0.1 (Logic Prototype – Not Hardware Tested)
+
+Features:
+- ADC1 dual channel sensing (Solar + Battery)
+- TIM1 PWM motor control
+- Relay switching logic
+- HAL-based STM32G431 architecture
+
+Status:
+Logic complete.
+Pending hardware validation.
+
+Author: Nikhil Nikam
+Date: 2026
