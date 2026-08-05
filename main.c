@@ -1,10 +1,20 @@
+/**
+ * @file    main.c
+ * @brief   Solar Hybrid EV — Main System Integration
+ * @author  Nikhil Sanjay Nikam
+ * @date    2026
+ *
+ * System Flow:
+ *   Boot → Init → Loop:
+ *     INA219 Update → SOC → State Machine → Relay → LCD
+ */
+
 #include "main.h"
-#include "adc.h"
 #include "i2c.h"
 #include "gpio.h"
 #include "lcd_i2c.h"
 #include "power_manager.h"
-#include "adc_manager.h"
+#include "ina219_manager.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -20,7 +30,7 @@ void Display_Update(PowerState state, int solar, int backup);
 #define BACKUP_RELAY_PORT  GPIOB
 
 PowerManager pm;
-PowerState last_relay_state = STATE_CHARGING;
+PowerState   last_relay_state = STATE_CHARGING;
 
 int main(void)
 {
@@ -29,18 +39,11 @@ int main(void)
 
     MX_GPIO_Init();
     MX_I2C1_Init();
-    MX_ADC1_Init();
-    MX_ADC2_Init();
-
-    HAL_ADCEx_Calibration_Start(&hadc1, ADC_SINGLE_ENDED);
-    HAL_Delay(10);
-    HAL_ADCEx_Calibration_Start(&hadc2, ADC_SINGLE_ENDED);
-    HAL_Delay(10);
 
     Relay_Init();
     last_relay_state = STATE_CHARGING;
 
-    HAL_Delay(200);
+    HAL_Delay(300);
     LCD_Init();
     HAL_Delay(100);
     LCD_Clear();
@@ -52,19 +55,23 @@ int main(void)
     HAL_Delay(2000);
     LCD_Clear();
 
-    ADC_Manager_Init();
+    INA219_Manager_Init();
     PowerManager_Init(&pm);
 
     while (1)
     {
-        ADC_Manager_Update();
-        int solar  = ADC_Get_Solar_Percent();
-        int backup = ADC_Get_Backup_Percent();
+        INA219_Manager_Update();
+
+        int solar  = INA219_Get_Solar_Percent();
+        int backup = INA219_Get_Backup_Percent();
 
         PowerManager_Update(&pm, solar, backup);
 
         if (pm.current_state != last_relay_state)
         {
+            if (pm.current_state == STATE_BACKUP)
+                INA219_Reset_Backup_Timer();
+
             Relay_SetState(pm.current_state);
             last_relay_state = pm.current_state;
         }
@@ -77,14 +84,18 @@ int main(void)
 
 void Relay_Init(void)
 {
-    HAL_GPIO_WritePin(SOLAR_RELAY_PORT,  SOLAR_RELAY_PIN,  GPIO_PIN_SET);
-    HAL_GPIO_WritePin(BACKUP_RELAY_PORT, BACKUP_RELAY_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(SOLAR_RELAY_PORT,
+                      SOLAR_RELAY_PIN,  GPIO_PIN_SET);
+    HAL_GPIO_WritePin(BACKUP_RELAY_PORT,
+                      BACKUP_RELAY_PIN, GPIO_PIN_SET);
 }
 
 void Relay_SetState(PowerState state)
 {
-    HAL_GPIO_WritePin(SOLAR_RELAY_PORT,  SOLAR_RELAY_PIN,  GPIO_PIN_SET);
-    HAL_GPIO_WritePin(BACKUP_RELAY_PORT, BACKUP_RELAY_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(SOLAR_RELAY_PORT,
+                      SOLAR_RELAY_PIN,  GPIO_PIN_SET);
+    HAL_GPIO_WritePin(BACKUP_RELAY_PORT,
+                      BACKUP_RELAY_PIN, GPIO_PIN_SET);
     HAL_Delay(200);
 
     switch (state)
@@ -111,17 +122,17 @@ void Display_Update(PowerState state, int solar, int backup)
     switch (state)
     {
         case STATE_SOLAR:
-            snprintf(line1, sizeof(line1), "Mode: SOLAR     ");
-            break;
+            snprintf(line1, sizeof(line1),
+                     "Mode: SOLAR     "); break;
         case STATE_BACKUP:
-            snprintf(line1, sizeof(line1), "Mode: BACKUP    ");
-            break;
+            snprintf(line1, sizeof(line1),
+                     "Mode: BACKUP    "); break;
         case STATE_CHARGING:
-            snprintf(line1, sizeof(line1), "Mode: CHARGING  ");
-            break;
+            snprintf(line1, sizeof(line1),
+                     "Mode: CHARGING  "); break;
         default:
-            snprintf(line1, sizeof(line1), "Mode: UNKNOWN   ");
-            break;
+            snprintf(line1, sizeof(line1),
+                     "Mode: UNKNOWN   "); break;
     }
 
     snprintf(line2, sizeof(line2), "S:%3d%%  B:%3d%%  ",
@@ -161,7 +172,8 @@ void SystemClock_Config(void)
     RCC_ClkInitStruct.AHBCLKDivider  = RCC_SYSCLK_DIV1;
     RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
     RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_8) != HAL_OK)
+    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct,
+                             FLASH_LATENCY_8) != HAL_OK)
         Error_Handler();
 }
 
@@ -174,7 +186,6 @@ void Error_Handler(void)
 #ifdef USE_FULL_ASSERT
 void assert_failed(uint8_t *file, uint32_t line)
 {
-    (void)file;
-    (void)line;
+    (void)file; (void)line;
 }
 #endif
